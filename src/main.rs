@@ -1,11 +1,9 @@
 mod errors;
 mod public_ip;
 
-#[macro_use]
-extern crate dotenv_codegen;
+use std::{env, thread::sleep, time::Duration};
 
-use std::{thread::sleep, time::Duration};
-
+use dotenv::dotenv;
 use log::{error, info};
 use public_ip::get_public_ip_address;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -19,12 +17,11 @@ fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let token = dotenv!("AUTH_BEARER");
-    let zone_id = dotenv!("ZONE_ID");
-    let domain = dotenv!("DOMAIN");
+    dotenv().ok();
+    let (token, zone_id, domain) = get_and_ensure_env_vars();
 
     loop {
-        let result = update(token, zone_id, domain);
+        let result = update(&token, &zone_id, &domain);
 
         match result {
             Ok(_) => (),
@@ -121,4 +118,23 @@ fn update_ip_address(
     info!("Successfully updated IP Address");
 
     Ok(())
+}
+
+fn get_and_ensure_env_vars() -> (String, String, String) {
+    let mut token: Option<String> = Option::None;
+    let mut zone_id: Option<String> = Option::None;
+    let mut domain: Option<String> = Option::None;
+
+    env::vars().for_each(|(key, value)| match key.as_str() {
+        "AUTH_BEARER" => token = Some(String::from(value)),
+        "ZONE_ID" => zone_id = Some(String::from(value)),
+        "DOMAIN" => domain = Some(String::from(value)),
+        _ => {}
+    });
+
+    let token = token.expect("AUTH_BEARER not set");
+    let zone_id = zone_id.expect("ZONE_ID not set");
+    let domain = domain.expect("DOMAIN not set");
+
+    (token, zone_id, domain)
 }
