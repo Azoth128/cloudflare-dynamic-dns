@@ -11,6 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build the Docker image
-      run: | 
+      - run: | 
         docker build . --tag ghcr.io/azoth128/cloudflare-dynamic-dns:latest
         docker push ghcr.io/azoth128/cloudflare-dynamic-dns:latest
