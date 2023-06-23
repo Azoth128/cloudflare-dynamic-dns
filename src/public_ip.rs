@@ -28,10 +28,9 @@ pub fn get_public_ip_address() -> Result<String, Error> {
 
     let text = regex
         .captures(&xml)
-        .map(|cap| cap.get(0))
-        .flatten()
+        .and_then(|cap| cap.get(0))
         .map(|cap| cap.as_str())
-        .map(|str| String::from(str))
+        .map(String::from)
         .ok_or(Error::new("Regex no match"));
 
     text
