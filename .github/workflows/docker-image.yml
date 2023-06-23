@@ -13,6 +13,6 @@ jobs:
       - name: Build the Docker image
         shell: bash
         run: |
-          echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
+          docker login ghcr.io -u azoth128 -p $CR_PAT
           docker build . --tag ghcr.io/azoth128/cloudflare-dynamic-dns:latest
           docker push ghcr.io/azoth128/cloudflare-dynamic-dns:latest
