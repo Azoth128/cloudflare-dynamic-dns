@@ -11,6 +11,11 @@ use serde_json::Value;
 
 use crate::errors::Error;
 
+struct CloudflareDnsEntry {
+    id: String,
+    ip_address: String,
+}
+
 fn main() {
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Stdout)
@@ -20,35 +25,49 @@ fn main() {
     dotenv().ok();
     let (token, zone_id, domain) = get_and_ensure_env_vars();
 
+    let mut cache = None;
+
     loop {
-        let result = update(&token, &zone_id, &domain);
+        let result = update_and_get_cache(cache, &token, &zone_id, &domain);
 
         match result {
-            Ok(_) => (),
-            Err(err) => error!("{}", err.message),
+            Ok(entry) => cache = Some(entry),
+            Err(err) => {
+                error!("{}", err.message);
+                cache = None;
+            }
         }
         sleep(Duration::from_secs(5 * 60));
     }
 }
 
-fn update(token: &str, zone_id: &str, domain: &str) -> Result<(), Error> {
-    let (id, content) = get_id_and_content_of_dns(token, zone_id, domain)?;
+fn update_and_get_cache(
+    cache: Option<CloudflareDnsEntry>,
+    token: &str,
+    zone_id: &str,
+    domain: &str,
+) -> Result<CloudflareDnsEntry, Error> {
+    let result = match cache {
+        Some(entry) => entry,
+        None => get_id_and_content_of_dns(token, zone_id, domain)?,
+    };
+
     let current_ip_address = get_public_ip_address()?;
 
-    if content == current_ip_address {
+    if result.ip_address == current_ip_address {
         info!("Not updating IP Address");
     } else {
-        update_ip_address(token, zone_id, &current_ip_address, domain, &id)?;
+        update_ip_address(token, zone_id, &current_ip_address, domain, &result.id)?;
     }
 
-    Ok(())
+    Ok(result)
 }
 
 fn get_id_and_content_of_dns(
     token: &str,
     zone_id: &str,
     domain: &str,
-) -> Result<(String, String), Error> {
+) -> Result<CloudflareDnsEntry, Error> {
     let client = reqwest::blocking::Client::new();
 
     let resp = client
@@ -58,6 +77,8 @@ fn get_id_and_content_of_dns(
         .header(AUTHORIZATION, format!("Bearer {token}",))
         .send()
         .map_err(|err| Error::new(err.to_string().as_str()))?;
+
+    info!("Fetched current DNS record from Cloudflare");
 
     let content = resp
         .text()
@@ -73,22 +94,22 @@ fn get_id_and_content_of_dns(
 
     for value in array {
         if value["name"] == domain {
-            return Ok((
-                String::from(
+            return Ok(CloudflareDnsEntry {
+                id: String::from(
                     value["id"]
                         .as_str()
                         .ok_or(Error::new("Could not parse id"))?,
                 ),
-                String::from(
+                ip_address: String::from(
                     value["content"]
                         .as_str()
                         .ok_or(Error::new("Could not parse content"))?,
                 ),
-            ));
+            });
         }
     }
 
-    panic!();
+    Err(Error::new("No Element in Array"))
 }
 
 fn update_ip_address(
@@ -126,9 +147,9 @@ fn get_and_ensure_env_vars() -> (String, String, String) {
     let mut domain: Option<String> = Option::None;
 
     env::vars().for_each(|(key, value)| match key.as_str() {
-        "AUTH_BEARER" => token = Some(String::from(value)),
-        "ZONE_ID" => zone_id = Some(String::from(value)),
-        "DOMAIN" => domain = Some(String::from(value)),
+        "AUTH_BEARER" => token = Some(value),
+        "ZONE_ID" => zone_id = Some(value),
+        "DOMAIN" => domain = Some(value),
         _ => {}
     });
 
